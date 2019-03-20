@@ -1,0 +1,179 @@
+---
+title: "PML Course Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Executive Summary
+
+This project involves analysis of data collected from accelerometers attached to human test subjects. Accelerometers were installed on four locations on six test subjects, and data were collected while they performed barbell lifts. Lifts were conducted correctly as well as in five different, incorrect ways. Data were then used to train a model that can be used to determine if a subject is performing the lift correctly or incorrectly. Four models were compared using cross validation:  Linear SVM, Random Forest, Classification Tree, and Gradient Boosting Machine. The Random Forest model was found to produce the lowest out of sample error (5.18%). This model was used to predict the lift classification in the test data set.
+
+## Data Analysis
+
+First, relevant libraries were loaded.
+
+```{r}
+library(caret)
+```
+
+Next, the data were loaded using the provided URLs. NA values were imputed onto all empty values within each dataframe.
+
+```{r}
+
+url_train <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_test <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+
+training <- read.csv(url(url_train), na.strings=c("NA",""))
+testing <- read.csv(url(url_test), na.strings=c("NA",""))
+
+```
+
+An evaluation of the structure of the training data indicated that there were several columns containing NA values. The colSums function was used to determine how many NA values were in each of these columns. Columns containing NA values included NA values for over 95% of the data observations (19216 / 19622). The first seven columns appear to be related to subject identification and are not relevant to the parameter we are trying to predict.
+
+```{r}
+str(training)
+colSums(is.na(training))
+```
+
+As a result, columns containing mostly NA values and columns related to test subject identification (Columns 1 - 7) were dropped from each of the datasets:
+
+```{r}
+training_clean <- training[, 8:length(training)]
+training_clean <- training_clean[colSums(is.na(training_clean)) == 0]
+
+testing_clean <- testing[, 8:length(testing)]
+testing_clean <- testing_clean[colSums(is.na(testing_clean)) == 0]
+```
+
+The remaining columns were analyzed to verify that none of them have a near-zero variance:
+
+```{r}
+nearZeroVar(training_clean, saveMetrics=TRUE)
+```
+
+None of the remaining columns have a near-zero variance and were thus kept in the dataset for analysis.
+
+### Cross Validation
+
+Since we do not have the correct predictions from the testing data available, cross validation was used to evaluate model performance. A k-fold cross validation procedure was used, and a value of k = 10 was selected. The same set of folds was used for evaluation of each model
+
+```{r}
+
+set.seed(1000)
+k_val <- 10
+flds <- createFolds(training_clean$classe, k=k_val, list=TRUE)
+
+```
+
+## Model Evaluation
+
+Performance of four (4) models was compared:
+
+* Linear SVM
+* Random Forest
+* Classification Tree
+* Boosting 
+
+For each of these models, a model was fit to folds 2 - 10 of the cross validation sets. Each of these models was then used to predict values contained in fold 1. The resulting accuracy was calculated for each fold, and the mean accuracy was calculated for the entire training set. The mean accuracy was then used to calculate the mean out of sample error. This value was used to compare performance of each of the four models.
+
+
+### Model 1:  Linear SVM  
+
+```{r}
+
+linearSvm_accuracy <- vector()
+tester <- training_clean[flds[[1]],]
+
+for (i in 2:k_val) {
+    trainer <- training_clean[flds[[i]],]
+    model <- train(classe ~ ., data=trainer, method="svmLinear")
+    pred <- predict(model, tester)
+    linearSvm_accuracy <- c(linearSvm_accuracy,confusionMatrix(pred, tester$classe)$overall[1])
+}
+
+mean(linearSvm_accuracy)
+linearSvm_error <- 1 - mean(linearSvm_accuracy)
+
+```
+
+
+### Model 2:  Random Forest
+
+```{r}
+rf_accuracy <- vector()
+
+for (i in 2:k_val) {
+    trainer <- training_clean[flds[[i]],]
+    model <- train(classe ~ ., data=trainer, method="rf")
+    pred <- predict(model, tester)
+    rf_accuracy <- c(rf_accuracy,confusionMatrix(pred, tester$classe)$overall[1])
+}
+
+mean(rf_accuracy)
+rf_error <- 1 - mean(rf_accuracy)
+
+```
+
+
+### Model 3:  Classification Tree
+
+
+Cross Validation
+
+```{r}
+rpart_accuracy <- vector()
+
+for (i in 2:k_val) {
+    trainer <- training_clean[flds[[i]],]
+    model <- train(classe ~ ., data=trainer, method="rpart")
+    pred <- predict(model, tester)
+    rpart_accuracy <- c(rpart_accuracy,confusionMatrix(pred, tester$classe)$overall[1])
+}
+
+mean(rpart_accuracy)
+rpart_error <- 1 - mean(rpart_accuracy)
+
+```
+
+
+### Model 4:  Boosting 
+
+```{r}
+gbm_accuracy <- vector()
+
+for (i in 2:k_val) {
+    trainer <- training_clean[flds[[i]],]
+    model <- train(classe ~ ., data=trainer, method="gbm", verbose=FALSE)
+    pred <- predict(model, tester)
+    gbm_accuracy <- c(gbm_accuracy,confusionMatrix(pred, tester$classe)$overall[1])
+}
+
+mean(gbm_accuracy)
+gbm_error <- 1 - mean(gbm_accuracy)
+
+```
+
+## Model Comparison
+
+```{r}
+barplot(c(linearSvm_error, rf_error, rpart_error, gbm_error), names.arg=c("Linear SVM", "Random Forest", "Classification Tree", "Boosting"), main="Estimated Out of Sample Error for Four Models", xlab="Model", ylab="Out of Sample Error")
+```
+
+Based on this comparison, the Random Forest model contained the lowest estimated out of sample error. As a result, this model was selected for implementation across the full training dataset. 
+
+
+## Random Forest Model Creation and Prediction:
+
+```{r}
+mod_rf <- train(classe ~ ., data=training_clean, method="rf", preProcess=c("center", "scale"), trControl=trainControl(method="cv", number=10))
+
+rf_pred <- predict(mod_rf, testing_clean)
+
+rf_pred
+```
+
+
